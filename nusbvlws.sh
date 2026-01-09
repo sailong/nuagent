@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==================================================
-# 路径与变量定义 (保持原有稳健配置)
+# 路径与变量定义 (严禁变动)
 # ==================================================
 SB_CONF="/etc/sing-box/config.json"
 SB_BIN="/usr/local/bin/sing-box"
@@ -15,14 +15,10 @@ CYAN='\033[0;36m'
 PLAIN='\033[0m'
 
 # ==================================================
-# 1. 配置生成 (保持 V1.12+ 兼容与显式日志路径)
+# 1. 配置生成逻辑 (V1.12+ 兼容性)
 # ==================================================
 write_config() {
-    local port=$1
-    local uuid=$2
-    local path=$3
-    local host=$4
-    
+    local port=$1 uuid=$2 path=$3 host=$4
     local transport_json
     if [ -z "$host" ]; then
         transport_json='{"type":"ws","path":"'$path'","early_data_header_name":"Sec-WebSocket-Protocol"}'
@@ -32,11 +28,7 @@ write_config() {
 
     cat <<EOF > $SB_CONF
 {
-  "log": {
-    "level": "info",
-    "timestamp": true,
-    "output": "$SB_LOG"
-  },
+  "log": { "level": "info", "timestamp": true, "output": "$SB_LOG" },
   "dns": {
     "servers": [
       { "tag": "dns-google", "address": "tls://8.8.8.8", "detour": "direct" },
@@ -79,7 +71,7 @@ EOF
 }
 
 # ==================================================
-# 2. 开机自启服务设置 (Systemd/OpenRC)
+# 2. 服务管理 (Systemd/OpenRC)
 # ==================================================
 setup_service() {
     touch $SB_LOG && chmod 666 $SB_LOG
@@ -115,7 +107,7 @@ EOF
 }
 
 # ==================================================
-# 3. nusb 管理工具 (新增 clear 功能)
+# 3. nusb 管理工具 (增加 host/clear/conn/early)
 # ==================================================
 create_nusb_cmd() {
     cat <<EOF > $SB_CMD
@@ -161,8 +153,8 @@ case "\$1" in
     stop) manage_service stop && echo "已停止";;
     restart) manage_service restart && echo "已重启";;
     status) pgrep -f \$SB_BIN > /dev/null && (echo -e "状态: ${GREEN}运行中${PLAIN}"; show_info) || echo -e "状态: ${RED}未运行${PLAIN}";;
-    log) echo -e "${YELLOW}正在实时读取日志 (Ctrl+C 退出)...${PLAIN}"; tail -n 50 -f \$SB_LOG ;;
-    clear) > \$SB_LOG && echo -e "${GREEN}日志已清空！${PLAIN}" ;;
+    log) tail -n 50 -f \$SB_LOG ;;
+    clear) > \$SB_LOG && echo "日志已清空" ;;
     conn)
         PORT=\$(jq -r '.inbounds[0].listen_port' \$SB_CONF)
         CONNS=\$(ss -antp | grep ":\$PORT" | grep "ESTAB")
@@ -170,10 +162,7 @@ case "\$1" in
     port) read -p "新端口: " P && jq ".inbounds[0].listen_port = \${P:-\$((RANDOM % 20000 + 30000))}" \$SB_CONF > /tmp/sb.json && mv /tmp/sb.json \$SB_CONF && \$0 restart ;;
     uuid) read -p "新 UUID: " U && jq ".inbounds[0].users[0].uuid = \"\${U:-\$(cat /proc/sys/kernel/random/uuid)}\"" \$SB_CONF > /tmp/sb.json && mv /tmp/sb.json \$SB_CONF && \$0 restart ;;
     path) read -p "新路径: " PA && jq ".inbounds[0].transport.path = \"\${PA:-/\$(openssl rand -hex 4)}\"" \$SB_CONF > /tmp/sb.json && mv /tmp/sb.json \$SB_CONF && \$0 restart ;;
-    host)
-        read -p "新 Host: " H
-        [ -z "\$H" ] && jq 'del(.inbounds[0].transport.headers)' \$SB_CONF > /tmp/sb.json || jq ".inbounds[0].transport.headers = {\"host\": \"\$H\"}" \$SB_CONF > /tmp/sb.json
-        mv /tmp/sb.json \$SB_CONF && \$0 restart ;;
+    host) read -p "新 Host: " H && ( [ -z "\$H" ] && jq 'del(.inbounds[0].transport.headers)' \$SB_CONF || jq ".inbounds[0].transport.headers = {\"host\": \"\$H\"}" \$SB_CONF ) > /tmp/sb.json && mv /tmp/sb.json \$SB_CONF && \$0 restart ;;
     early)
         CUR=\$(jq -r '.inbounds[0].transport.early_data_header_name' \$SB_CONF)
         [ "\$CUR" == "Sec-WebSocket-Protocol" ] && jq 'del(.inbounds[0].transport.early_data_header_name)' \$SB_CONF > /tmp/sb.json || jq '.inbounds[0].transport.early_data_header_name = "Sec-WebSocket-Protocol"' \$SB_CONF > /tmp/sb.json
@@ -185,7 +174,7 @@ EOF
 }
 
 # ==================================================
-# 4. 主菜单入口
+# 4. 业务逻辑
 # ==================================================
 do_install() {
     OS_TYPE=$(test -f /etc/alpine-release && echo "alpine" || echo "debian")
@@ -206,18 +195,22 @@ do_install() {
     write_config "${IPORT:-$((RANDOM % 20000 + 30000))}" "${IUUID:-$(cat /proc/sys/kernel/random/uuid)}" "${IPATH:-/$(openssl rand -hex 4)}" "$IHOST"
     setup_service
     create_nusb_cmd
-    $SB_CMD start && clear && $SB_CMD status
+    $SB_CMD restart && clear && $SB_CMD status
 }
 
+# ==================================================
+# 5. 主菜单 (使用正确的 break 逻辑)
+# ==================================================
 while true; do
     clear
-    echo -e "${CYAN}Sing-box 运维脚本 V9.0 (日志/Host/自启 全能版)${PLAIN}"
+    echo -e "${CYAN}Sing-box 运维脚本 V10.0 (逻辑修复版)${PLAIN}"
     echo -e "1. 安装/覆盖安装\n2. 卸载\n3. 查看详情 (nusb)\n0. 退出"
     read -p "选择: " choice
     case "$choice" in
-        1) do_install; break ;;
-        2) (pkill -f $SB_BIN; rm -rf $SB_BIN $SB_CMD $SB_LOG /etc/sing-box; echo "已卸载"); break ;;
-        3) [ -f $SB_CMD ] && ($SB_CMD status; break) || echo "未安装！"; sleep 1 ;;
-        0) exit 0 ;;
+        1) do_install; echo "回车继续..."; read ;;
+        2) (pkill -f $SB_BIN; rm -rf $SB_BIN $SB_CMD $SB_LOG /etc/sing-box; echo "已卸载"); echo "回车继续..."; read ;;
+        3) [ -f $SB_CMD ] && $SB_CMD status || echo "未安装！"; echo "回车继续..."; read ;;
+        0) break ;; # 这里 break 在 while 循环内，是合法的
+        *) echo "无效选项！"; sleep 1 ;;
     esac
 done
