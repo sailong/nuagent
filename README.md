@@ -4,5 +4,5 @@ bash <(curl -Ls https://raw.githubusercontent.com/sailong/nuagent/refs/heads/mai
 ```
 ##### 国内
 ```bash
-bash <(curl -Ls https://mirror.ghproxy.com/https://raw.githubusercontent.com/yourname/repo/main/script.sh)
+bash <(curl -Ls https://mirror.ghproxy.com/https://raw.githubusercontent.com/sailong/nuagent/refs/heads/main/nusbv2.sh)
 ```
