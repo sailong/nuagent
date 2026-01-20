@@ -75,8 +75,6 @@ install_sb() {
     SB_TMP=$(find . -maxdepth 1 -type d -name "sing-box-*" | head -n 1)
     cp -f "$SB_TMP/sing-box" "$SB_BIN" && chmod +x "$SB_BIN"
     rm -rf sb.tar.gz "$SB_TMP"
-    
-    # 初始化配置
     echo '{"log":{"level":"info","timestamp":true},"inbounds":[],"outbounds":[{"type":"direct","tag":"direct"}]}' > "$SB_CONF"
     
     # 启动服务
@@ -122,22 +120,20 @@ add_node() {
     echo -e " 1. VLESS + WS (明文)"
     echo -e " 2. Trojan + WS (明文)"
     echo -e " ${YELLOW}[直连 - 推荐]${PLAIN}"
-    echo -e " 3. ${GREEN}VLESS + REALITY${PLAIN} (抗封锁/无证书)"
-    echo -e " 4. ${GREEN}Hysteria 2${PLAIN} (暴力UDP/自签证书)"
+    echo -e " 3. VLESS + REALITY (抗封锁)"
+    echo -e " 4. Hysteria 2 (自签证书)"
     read -p "选择: " type
     
-    read -p "监听端口 (Reality建议443): " port
+    read -p "监听端口: " port
     if grep -q "|$port|" "$SB_DB"; then echo -e "${RED}端口已占用${PLAIN}"; return; fi
-
     uuid=$(cat /proc/sys/kernel/random/uuid)
     
     case "$type" in
-        1|2) # WS 模式
+        1|2)
             echo -e "${YELLOW}请输入你 Cloudflare Tunnel 绑定的域名${PLAIN}"
             read -p "绑定域名 (例: tunnel.abc.com): " domain
             read -p "WS 路径 (回车自动随机): " input_path
             [ -z "$input_path" ] && path="/$(openssl rand -hex 4)" || ([[ "$input_path" != /* ]] && path="/$input_path" || path="$input_path")
-            
             if [ "$type" == "1" ]; then
                 json="{\"type\":\"vless\",\"tag\":\"vless-$port\",\"listen\":\"::\",\"listen_port\":$port,\"users\":[{\"uuid\":\"$uuid\"}],\"transport\":{\"type\":\"ws\",\"path\":\"$path\"}}"
                 db="vless|$port|$uuid|$path|$domain"
@@ -145,29 +141,22 @@ add_node() {
                 pwd=$(openssl rand -base64 12)
                 json="{\"type\":\"trojan\",\"tag\":\"trojan-$port\",\"listen\":\"::\",\"listen_port\":$port,\"users\":[{\"password\":\"$pwd\"}],\"transport\":{\"type\":\"ws\",\"path\":\"$path\"}}"
                 db="trojan|$port|$pwd|$path|$domain"
-            fi
-            ;;
-        
-        3) # Reality 模式
-            echo -e "${YELLOW}请输入伪装域名 (无需是你自己的，回车默认 www.microsoft.com)${PLAIN}"
-            read -p "伪装域名: " sni
+            fi ;;
+        3)
+            read -p "伪装域名 (回车 www.microsoft.com): " sni
             [ -z "$sni" ] && sni="www.microsoft.com"
             keys=$($SB_BIN generate reality-keypair)
             pk=$(echo "$keys" | grep "Private key" | awk '{print $3}')
             pub=$(echo "$keys" | grep "Public key" | awk '{print $3}')
             sid=$(openssl rand -hex 8)
             json="{\"type\":\"vless\",\"tag\":\"reality-$port\",\"listen\":\"::\",\"listen_port\":$port,\"users\":[{\"uuid\":\"$uuid\"}],\"tls\":{\"enabled\":true,\"server_name\":\"$sni\",\"reality\":{\"enabled\":true,\"handshake\":{\"server\":\"$sni\",\"server_port\":443},\"private_key\":\"$pk\",\"short_id\":[\"$sid\"]}}}"
-            db="reality|$port|$uuid|$pub|$sid|$sni"
-            ;;
-
-        4) # Hy2 模式
-            echo -e "${YELLOW}正在生成自签名证书 (有效期10年)...${PLAIN}"
+            db="reality|$port|$uuid|$pub|$sid|$sni" ;;
+        4)
             openssl req -x509 -newkey rsa:2048 -nodes -sha256 -keyout "$SB_CERT/hy2.key" -out "$SB_CERT/hy2.crt" -days 3650 -subj "/CN=bing.com" 2>/dev/null
             read -p "认证密码 (回车随机): " hpwd
             [ -z "$hpwd" ] && hpwd=$(openssl rand -base64 12)
             json="{\"type\":\"hysteria2\",\"tag\":\"hy2-$port\",\"listen\":\"::\",\"listen_port\":$port,\"users\":[{\"password\":\"$hpwd\"}],\"tls\":{\"enabled\":true,\"certificate_path\":\"$SB_CERT/hy2.crt\",\"key_path\":\"$SB_CERT/hy2.key\"}}"
-            db="hy2|$port|$hpwd"
-            ;;
+            db="hy2|$port|$hpwd" ;;
         *) return ;;
     esac
     
@@ -210,42 +199,41 @@ show_nodes() {
 }
 
 # ==================================================
-# 6. BBR 管理 (V47.0 状态感知)
+# 6. BBR 管理
 # ==================================================
 get_bbr_status() {
     local algo=$(sysctl net.ipv4.tcp_congestion_control 2>/dev/null | awk '{print $3}')
-    if [[ "$algo" == "bbr" ]]; then
-        BBR_STATUS="${GREEN}已开启${PLAIN}"
-    else
-        BBR_STATUS="${RED}未开启${PLAIN}"
-    fi
+    if [[ "$algo" == "bbr" ]]; then BBR_STATUS="${GREEN}已开启${PLAIN}"; else BBR_STATUS="${RED}未开启${PLAIN}"; fi
 }
-
 enable_bbr() {
     echo -e "${YELLOW}正在检测系统环境...${PLAIN}"
-    
-    # 检查内核版本 >= 4.9
-    KERNEL_MAJOR=$(uname -r | cut -d. -f1)
-    KERNEL_MINOR=$(uname -r | cut -d. -f2)
-    if [[ $KERNEL_MAJOR -lt 4 ]] || ([[ $KERNEL_MAJOR -eq 4 ]] && [[ $KERNEL_MINOR -lt 9 ]]); then
-        echo -e "${RED}内核版本过低 ($(uname -r))，BBR 需要 4.9+。无法开启。${PLAIN}"
-        return
-    fi
-
-    echo -e "${YELLOW}正在配置 BBR...${PLAIN}"
-    if [ ! -f /etc/sysctl.conf ]; then touch /etc/sysctl.conf; fi
+    K_MAJ=$(uname -r | cut -d. -f1); K_MIN=$(uname -r | cut -d. -f2)
+    if [[ $K_MAJ -lt 4 ]] || ([[ $K_MAJ -eq 4 ]] && [[ $K_MIN -lt 9 ]]); then echo -e "${RED}内核版本过低 (<4.9)，无法开启。${PLAIN}"; return; fi
     sed -i '/net.core.default_qdisc/d' /etc/sysctl.conf
     sed -i '/net.ipv4.tcp_congestion_control/d' /etc/sysctl.conf
     echo "net.core.default_qdisc = fq" >> /etc/sysctl.conf
     echo "net.ipv4.tcp_congestion_control = bbr" >> /etc/sysctl.conf
     sysctl -p >/dev/null 2>&1
-    
     get_bbr_status
-    echo -e "操作完成，当前状态: $BBR_STATUS"
+    echo -e "当前状态: $BBR_STATUS"
 }
 
 # ==================================================
-# 7. 干净卸载
+# 7. WARP IPv4 (V50.0 GitLab源)
+# ==================================================
+install_warp() {
+    echo -e "${CYAN}--- WARP IPv4 快速安装向导 ---${PLAIN}"
+    echo -e "${YELLOW}说明：调用 fscarmen 原版 WARP 脚本 (GitLab 源)。${PLAIN}"
+    echo -e "${YELLOW}功能：为 IPv6 机器添加 IPv4 / 解锁流媒体 / 换 IP。${PLAIN}"
+    echo -e "----------------------------------------"
+    read -p "按回车开始安装，按 Ctrl+C 取消..."
+    
+    # 使用你提供的 GitLab 地址
+    wget -N https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh && bash menu.sh
+}
+
+# ==================================================
+# 8. 干净卸载
 # ==================================================
 uninstall_all() {
     if [ -d /run/systemd/system ]; then
@@ -261,6 +249,8 @@ uninstall_all() {
         rm -f /etc/init.d/sing-box /etc/init.d/cloudflared
     fi
     rm -rf "$SB_DIR" "$SB_BIN" "$CF_BIN"
+    # 清理 WARP 脚本文件
+    rm -f menu.sh
     echo -e "${GREEN}卸载完成。${PLAIN}"
 }
 
@@ -270,13 +260,14 @@ uninstall_all() {
 while true; do
     get_bbr_status
     clear
-    echo -e "${CYAN}Sing-box 极简全能版 V47.0${PLAIN}"
+    echo -e "${CYAN}Sing-box 极简全能版 V50.0${PLAIN}"
     echo -e "1. 安装 Sing-box"
     echo -e "2. 安装并启动 Cloudflared"
     echo -e "3. 添加节点 ${YELLOW}(Reality/Hy2/WS)${PLAIN}"
     echo -e "4. 查看节点"
     echo -e "5. 干净卸载所有"
     echo -e "6. 开启/刷新 BBR 加速 [状态: ${BBR_STATUS}]"
+    echo -e "7. ${GREEN}添加 WARP IPv4 (fscarmen GitLab源)${PLAIN}"
     echo -e "0. 退出"
     read -p "选择: " num
     case "$num" in
@@ -286,6 +277,7 @@ while true; do
         4) show_nodes ;;
         5) uninstall_all; read -p "按回车..." ;;
         6) enable_bbr; read -p "按回车..." ;;
+        7) install_warp; read -p "按回车..." ;;
         0) exit 0 ;;
     esac
 done
