@@ -37,7 +37,7 @@ read -p "请选择 (默认1): " net_opt
 if [[ "$net_opt" == "2" ]]; then
     PROXY=""
 else
-    DEFAULT_PROXY="https://mirror.ghproxy.com/"
+    DEFAULT_PROXY="https://ghfast.top/"
     echo -e "${CYAN}请输入加速镜像地址 (需以 http 开头，以 / 结尾)${PLAIN}"
     echo -e "例如: https://ghproxy.net/ 或 https://gh.api.999888.xyz/"
     read -p "留空则使用默认 [${DEFAULT_PROXY}]: " user_mirror
