@@ -1,8 +1,3 @@
-##### 直连
-```bash
-bash <(curl -Ls https://sl.bluu.pl/4Ifj)
-```
-
 # Sing-box 极简全能运维脚本 V50.0
 
 ![Version](https://img.shields.io/badge/version-V50.0-blue?style=flat-square)
@@ -12,7 +7,10 @@ bash <(curl -Ls https://sl.bluu.pl/4Ifj)
 一个专为 **生产环境、救砖、低配机器 (如 Alpine)** 设计的极简 Sing-box 运维脚本。
 剔除冗余 UI，专注于核心功能：**Cloudflare Tunnel 内网穿透**、**Reality/Hysteria2 直连**、**BBR 加速** 以及 **WARP 网络接口**。
 
-> **V50.0 更新重点**：WARP 模块集成 **fscarmen** 官方 GitLab 源，彻底修复因 GitHub 仓库变动导致的 404 下载失败问题。
+## 📥 安装与使用
+```bash
+bash <(curl -Ls https://sl.bluu.pl/4Ifj)
+```
 
 ---
 
@@ -39,10 +37,6 @@ bash <(curl -Ls https://sl.bluu.pl/4Ifj)
 | **进程管理** | Systemd | Systemd | Systemd | **OpenRC** |
 
 ---
-
-## 📥 安装与使用
-```bash
-bash <(curl -Ls https://sl.bluu.pl/4Ifj)
 
 ## 📖 功能菜单详解
 
@@ -85,21 +79,18 @@ bash <(curl -Ls https://sl.bluu.pl/4Ifj)
 * **用途**：
     * 为纯 IPv6 机器添加 IPv4 访问能力（解决 GitHub、Docker 拉取失败等问题）。
     * 为 IPv4 机器添加 WARP IP 以解锁 Netflix、Disney+、ChatGPT 等流媒体限制。
-
 ## ⚠️ 关键注意事项
-关于 Cloudflare Tunnel 配置：
 
-添加 VLESS/Trojan (WS) 节点后，请务必在 Cloudflare Zero Trust 后台将 Tunnel 的 Public Hostname 指向 localhost:您设置的端口。
+1.  **关于 Cloudflare Tunnel 配置**：
+    * 添加 VLESS/Trojan (WS) 节点后，请务必在 **Cloudflare Zero Trust** 后台将 Tunnel 的 **Public Hostname** 指向 `localhost:您设置的端口`。
+    * 脚本生成的订阅链接默认为 **TLS (HTTPS)** 模式，Tunnel 端必须正确配置 HTTPS 转发或由 CF 边缘节点自动处理加密。
 
-脚本生成的链接默认为 TLS 模式，Tunnel 端必须正确配置 HTTPS 转发或由 CF 自动处理。
+2.  **关于 Hysteria 2 客户端设置**：
+    * 由于脚本使用的是自动生成的 **自签名证书 (Self-signed Cert)**，客户端连接时 **必须开启** “允许不安全 (Allow Insecure / Skip Cert Verify)” 选项，否则无法建立连接。
 
-关于 Hysteria 2 客户端设置：
-
-由于使用脚本生成的自签名证书，客户端连接时必须开启 “允许不安全 (Allow Insecure / Skip Cert Verify)” 选项，否则无法连接。
-
-关于国内服务器：
-
-脚本运行之初请务必选择 "1. 国内服务器"，否则 Sing-box 或 Cloudflared 的下载极大概率会失败。
+3.  **关于国内服务器**：
+    * 脚本运行之初的网络环境选择步骤，请务必选择 **"1. 国内服务器"**。
+    * 否则 Sing-box 核心组件或 Cloudflared 二进制文件的下载极大概率会因网络原因失败。
 
 📜 免责声明
 本脚本仅供网络技术研究与服务器运维学习使用，请遵守当地法律法规。
